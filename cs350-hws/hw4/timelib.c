@@ -29,14 +29,49 @@
  * wait_time seconds using sleeping functions */
 uint64_t get_elapsed_sleep(long sec, long nsec)
 {
-	/* IMPLEMENT ME! */
+	uint64_t start, end;
+	struct timespec wait_time;
+	wait_time.tv_sec = sec;
+	wait_time.tv_nsec = nsec;
+
+	/* Get the start timestamp */
+	get_clocks(start);
+
+	/* Sleep X seconds */
+	nanosleep(&wait_time, NULL);
+
+	/* Get end timestamp */
+	get_clocks(end);
+
+	return (end - start);
 }
 
 /* Return the number of clock cycles elapsed when waiting for
  * wait_time seconds using busy-waiting functions */
 uint64_t get_elapsed_busywait(long sec, long nsec)
 {
-	/* IMPLEMENT ME! */
+	uint64_t start, end;
+	struct timespec now;
+	struct timespec time_end;
+
+	/* Measure the current system time */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	time_end.tv_sec = sec;
+	time_end.tv_nsec = nsec;
+	timespec_add(&time_end, &now);
+
+	/* Get the start timestamp */
+	get_clocks(start);
+
+	/* Busy wait until enough time has elapsed */
+	do {
+		clock_gettime(CLOCK_MONOTONIC, &now);
+	} while (time_end.tv_sec > now.tv_sec || time_end.tv_nsec > now.tv_nsec);
+
+	/* Get end timestamp */
+	get_clocks(end);
+
+	return (end - start);
 }
 
 /* Utility function to add two timespec structures together. The input
@@ -73,5 +108,34 @@ int timespec_cmp(struct timespec *a, struct timespec *b)
  * parameter */
 uint64_t busywait_timespec(struct timespec delay)
 {
-	/* IMPLEMENT ME! (Optional but useful) */
+	uint64_t start, end;
+	struct timespec now;
+
+	/* Measure the current system time */
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	timespec_add(&delay, &now);
+
+	/* Get the start timestamp */
+	get_clocks(start);
+
+	/* Busy wait until enough time has elapsed */
+	do {
+		clock_gettime(CLOCK_MONOTONIC, &now);
+	} while (delay.tv_sec > now.tv_sec || delay.tv_nsec > now.tv_nsec);
+
+	/* Get end timestamp */
+	get_clocks(end);
+
+	return (end - start);
+}
+
+/* Translate a double timestamp into a valid timespec */
+inline struct timespec dtotspec(double timestamp)
+{
+	/* Timestamp assumed is in seconds, so fill timespec
+	 * accordingly */
+	struct timespec retval;
+	retval.tv_sec = (long)timestamp;
+	retval.tv_nsec = (long)(timestamp * NANO_IN_SEC) % NANO_IN_SEC;
+	return retval;
 }
