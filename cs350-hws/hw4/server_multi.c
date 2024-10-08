@@ -96,31 +96,36 @@ struct queue {
 
 
 struct connection_params {
-	int conn_socket;
 	size_t queue_size;
 	int worker_count;
+	// int conn_socket;
 };
-
 
 struct worker_params {
 	struct queue *the_queue;
 	int conn_socket;
-	int thread_id;
 	volatile int worker_done;
-	pthread_t thread;
+};
+
+struct thread_meta {
+	int thread_id;
+	struct worker_params params;
 };
 
 
 /* Helper function to perform queue initialization */
-void queue_init(struct queue * the_queue, size_t queue_size)
+void queue_init(struct queue * the_queue, int queue_size)
 {
+	the_queue->requests = malloc(queue_size * sizeof(struct request_meta));
+	if (the_queue->requests == NULL) {
+		perror("Failed to allocate memory for queue");
+		return;
+	}
 	the_queue->head = 0;
 	the_queue->tail = 0;
-	the_queue->requests = malloc(queue_size * sizeof(struct request_meta));
 	the_queue->size = queue_size;
 	the_queue->count = 0;
 }
-
 
 /* Add a new request <request> to the shared queue <the_queue> */
 int add_to_queue(struct request_meta to_add, struct queue * the_queue)
@@ -199,17 +204,19 @@ void dump_queue_status(struct queue * the_queue)
 
 
 /* Main logic of the worker thread */
-int worker_main (void * arg)
+void * worker_main (void * arg)
 {
 	struct timespec now, start_timestamp, completion_timestamp;
-	struct worker_params * params = (struct worker_params *)arg;
+
+	struct thread_meta *thread_meta = (struct thread_meta *)arg;
+	struct worker_params * params = &thread_meta->params;
 
 	/* Print the first alive message. */
 	clock_gettime(CLOCK_MONOTONIC, &now);
 	sync_printf("[#WORKER#] %lf Worker Thread Alive!\n", TSPEC_TO_DOUBLE(now));
 
 	/* Okay, now execute the main logic. */
-	while (!params->worker_done) {
+	while (1) {
 		struct request_meta req = get_from_queue(params->the_queue);
 
 		if (worker_done || params->worker_done) {
@@ -228,8 +235,9 @@ int worker_main (void * arg)
 		
 		send(params->conn_socket, &resp, sizeof(resp), 0);
 
-		printf("T%d R%ld:%.6f,%.6f,%.6f,%.6f,%.6f\n",
-			params->thread_id, req.request.req_id,
+		sync_printf("T%d R%ld:%.6f,%.6f,%.6f,%.6f,%.6f\n",
+			thread_meta->thread_id, 
+			req.request.req_id,
 			TSPEC_TO_DOUBLE(req.request.req_timestamp),
 			TSPEC_TO_DOUBLE(req.request.req_length),
 			TSPEC_TO_DOUBLE(req.receipt_ts),
@@ -238,6 +246,10 @@ int worker_main (void * arg)
 		);
 
 		dump_queue_status(params->the_queue);
+
+		/*if (worker_done || params->worker_done) {
+			break;
+		}*/
 	}
 
 	return EXIT_SUCCESS;
@@ -246,26 +258,50 @@ int worker_main (void * arg)
 
 /* This function will control all the workers (start or stop them). 
  * Feel free to change the arguments of the function as you wish. */
-int control_workers(int start_stop_cmd, size_t worker_count, struct worker_params * common_params)
+int control_workers(int start_stop_cmd, size_t worker_count, struct thread_meta *thread_meta)
 {
+	static pthread_t *worker_threads = NULL;
+	static struct thread_meta *thread_metas = NULL;
+
 	/* IMPLEMENT ME !! */
 	if (start_stop_cmd == 0) { // Starting all the workers
-		for (size_t i = 0; i < worker_count; i++) {
-			common_params[i].worker_done = 0;
-			pthread_create(&common_params[i].thread, NULL, (void *(*)(void *))worker_main, &common_params[i]);
+		worker_threads = malloc(worker_count * sizeof(pthread_t));
+		thread_metas = malloc(worker_count * sizeof(struct thread_meta));
+
+		if (worker_threads == NULL || thread_metas == NULL) {
+			perror("Failed to allocate memory for threads");
+			return EXIT_FAILURE;
 		}
+
+		for (size_t i = 0; i < worker_count; i++) {
+			thread_metas[i].thread_id = i;
+			thread_metas[i].params = thread_meta->params; 
+			thread_metas[i].params.worker_done = 0;
+			
+			if (pthread_create(&worker_threads[i], NULL, worker_main, &thread_metas[i]) != 0) {
+				perror("Failed to create worker thread");
+				return EXIT_FAILURE;
+			}
+		}
+		return EXIT_SUCCESS;
 	} else { // Stopping all the workers
 		/* IMPLEMENT ME !! */
 		for (size_t i = 0; i < worker_count; i++) {
-			common_params[i].worker_done = 1;
+			thread_metas[i].params.worker_done = 1;
+		}for(size_t i = 0; i < worker_count; i++) {
+			sem_post(queue_notify);
 		}
 		for(size_t i = 0; i < worker_count; i++) {
-			pthread_join(common_params[i].thread, NULL);
+			pthread_join(worker_threads[i], NULL);
 		}
 	}
 
+	free(worker_threads);
+	free(thread_metas);
+
 	/* IMPLEMENT ME !! */
-	return EXIT_SUCCESS;
+	//return EXIT_SUCCESS;
+	return EXIT_FAILURE;
 }
 
 
@@ -274,19 +310,20 @@ int control_workers(int start_stop_cmd, size_t worker_count, struct worker_param
  * with the client is interrupted. */
 void handle_connection(int conn_socket, struct connection_params conn_params)
 {
-	struct queue *the_queue = malloc(sizeof(struct queue));
+	struct queue *the_queue = (struct queue *)malloc(sizeof(struct queue));
 	queue_init(the_queue, conn_params.queue_size);
 
-	struct worker_params *params = malloc(conn_params.worker_count * sizeof(struct worker_params));
+	//struct worker_params *params = malloc(conn_params.worker_count * sizeof(struct worker_params));
+	struct thread_meta *worker_meta = malloc(conn_params.worker_count * sizeof(struct thread_meta));
 
 	for (int i = 0; i < conn_params.worker_count; i++) {
-		params[i].conn_socket = conn_socket;
-		params[i].the_queue = the_queue;
-		params[i].thread_id = i;
-		params[i].worker_done = 0;
+		worker_meta[i].thread_id = i; 
+        worker_meta[i].params.the_queue = the_queue; 
+        worker_meta[i].params.conn_socket = conn_socket; 
+        worker_meta[i].params.worker_done = 0;
 	}
 
-	control_workers(0, conn_params.worker_count, params);
+	control_workers(0, conn_params.worker_count, worker_meta);
 
 	struct request_meta *req = malloc(sizeof(struct request_meta));
 	struct response resp;
@@ -306,7 +343,7 @@ void handle_connection(int conn_socket, struct connection_params conn_params)
                 resp.ack = RESP_REJECTED;
                 send(conn_socket, &resp, sizeof(resp), 0);
 				
-                printf("X%lu:%.6f,%.6f,%.6f\n",
+                sync_printf("X%lu:%.6f,%.6f,%.6f\n",
                        req->request.req_id,
                        TSPEC_TO_DOUBLE(req->request.req_timestamp),
                        TSPEC_TO_DOUBLE(req->request.req_length),
@@ -319,12 +356,13 @@ void handle_connection(int conn_socket, struct connection_params conn_params)
 
 
 	/* IMPLEMENT ME!! Gracefully terminate all the worker threads ! */
-	control_workers(1, conn_params.worker_count, params);
+	worker_done = 1;
+	control_workers(1, conn_params.worker_count, worker_meta);
 
-	free(the_queue->requests);
 	free(the_queue);
 	free(req);
-	free(params);
+	free(worker_meta);
+	//free(params);
 
 	shutdown(conn_socket, SHUT_RDWR);
 	close(conn_socket);
@@ -348,10 +386,10 @@ int main (int argc, char ** argv) {
 	struct connection_params conn_params;
 	int option;
 
-	if (argc != 6) {
+	/*if (argc != 6) {
 		fprintf(stderr, USAGE_STRING, argv[0]);
 		return EXIT_FAILURE;
-	}
+	}*/
 
 	while ((option = getopt(argc, argv, "q:w:")) != -1) {
 		switch (option) {
