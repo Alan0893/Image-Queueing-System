@@ -748,20 +748,6 @@ int main (int argc, char ** argv) {
     }
     sem_init(socket_lock, 0, 1);
 
-
-	/*requests_received = malloc(image_count, sizeof(uint64_t));
-	if (!requests_received) {
-		perror("Failed to allocate memory for requests_received");
-		exit(EXIT_FAILURE);
-	}
-
-	requests_completed = malloc(image_count, sizeof(uint64_t));
-	if (!requests_completed) {
-		perror("Failed to allocate memory for requests_completed");
-		exit(EXIT_FAILURE);
-	}*/
-	
-	
 	/*------------------------------------------------------------------------------*/
 
 	/* Ready to handle the new connection with the client. */
