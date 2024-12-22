@@ -11,6 +11,6 @@
 | 5 | Queue Scheduling  | [Build](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw5) | [Eval](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw5/EVAL)  |
 | 6 | Image Processing Server  | [Build](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw6) | [Eval](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw6/EVAL)  |
 | 7 | Operation Profiling  | [Build](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw7) | [Eval](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw7/EVAL)  |
-| 8 | Final System  | [Build](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw8) | [Eval](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw8/EVAL)  |
+| 8 | Semaphores & Mutexes  | [Build](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw8) | [Eval](https://github.com/Alan0893/CS-350/tree/main/cs350-hws/hw8/EVAL)  |
 
 </div>
